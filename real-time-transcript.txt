@@ -1,0 +1,17 @@
+Okay, let me walk you through how we handle the new customer.
+
+When a new customer signs the contract, the sales rep creates a new company record in HubSpot.
+
+And marks the deal as closed.
+
+One that automatically triggers a slack notification in the customer Success channel.
+
+So the CSM knows they have a new account within one business day.
+
+The CSM sends a welcome email from Gmail with the scheduling link for the kickoff call.
+
+After the kickoff, the CSM fills out a short onboarding checklist in notion Base, a company info stakeholders, key goals, and any risks.
+
+If the customer doesn't schedule within three days, the CSM follows up with a reminder email and also pings the sales rep.
+
+We consider onboarding complete once the customer has had their kickoff call and is actively using the product for at least two weeks.
