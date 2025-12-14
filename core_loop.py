@@ -15,7 +15,8 @@ from typing import Optional
 from openai import OpenAI
 
 # Import from new architecture
-from core import DocumentUpdater, PROCESS_TEMPLATE, SYSTEM_PROMPT, Utterance, Metrics
+from core import DocumentUpdater, SYSTEM_PROMPT, Utterance, Metrics
+from templates import PROCESS_TEMPLATE
 from input_handlers import InputHandler
 
 # Re-export for backward compatibility

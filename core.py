@@ -10,27 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-
-# ---------- Process template (initial empty document) ----------
-
-PROCESS_TEMPLATE: Dict[str, Any] = {
-    "process_name": "",
-    "process_goal": "",
-    "scope": {
-        "start_trigger": "",
-        "end_condition": "",
-        "in_scope": [],
-        "out_of_scope": [],
-    },
-    "actors": [],   # e.g. ["Sales rep", "Customer success", "New customer"]
-    "systems": [],  # e.g. ["HubSpot", "Gmail", "Slack"]
-    "main_flow": [
-        # each step: {"id": "S1", "description": "...", "actor": "", "system": ""}
-    ],
-    "exceptions": [],
-    "metrics": [],
-    "open_questions": [],
-}
+from templates import PROCESS_TEMPLATE
 
 
 SYSTEM_PROMPT = """Update a process document using JSON Patch (RFC 6902).
@@ -47,7 +27,17 @@ Output format:
 Rules:
 - Paths start with "/". Use numeric indices for arrays. Append with "-" (e.g., "/main_flow/-").
 - Return minimal, valid JSON. If no update needed: { "patch": [] }.
-- Never invent fields not clearly implied."""
+- Never invent fields not clearly implied.
+
+Metadata Fields (_instructions):
+- Fields starting with "_" (especially "_instructions") are metadata that describe how to interpret each section.
+- These fields provide guidance on what to extract and how to structure the data for each section.
+- DO NOT modify "_instructions" fields via patches - they are documentation, not data.
+- Use the "_instructions" fields to understand:
+  * What type of information belongs in each section
+  * How to structure extracted data (e.g., step objects with id, description, actor, system)
+  * What examples or patterns to look for in utterances
+- The instructions are co-located with the data structure they describe for easy reference."""
 
 
 @dataclass
@@ -79,13 +69,14 @@ class DocumentUpdater:
         client: OpenAI, 
         model: str = "gpt-4o",
         temperature: float = 0.2,
+        template: Optional[Dict[str, Any]] = None,
         logger: Optional[logging.Logger] = None
     ):
         self.client = client
         self.model = model
         self.temperature = temperature
         self.logger = logger or logging.getLogger(__name__)
-        self.doc_state: Dict[str, Any] = deepcopy(PROCESS_TEMPLATE)
+        self.doc_state: Dict[str, Any] = deepcopy(template or PROCESS_TEMPLATE)
         self.utterances: List[Utterance] = []
         self.metrics_history: List[Metrics] = []
         
