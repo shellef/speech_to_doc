@@ -38,6 +38,7 @@ class SpeechDriver:
         self.on_final_result = on_final_result
         self.logger = logger or logging.getLogger(__name__)
         self.utterance_count = 0
+        self.last_finalized_text = ""  # Track last finalized text to prevent duplicates
     
     def add_chunk(self, chunk: Dict):
         """
@@ -63,14 +64,31 @@ class SpeechDriver:
         
         current_text = " ".join(utterance_parts)
         
-        # Emit interim result
-        if self.on_interim_result:
-            self.on_interim_result(current_text)
-        
-        # Check for end of utterance
+        # Check for end of utterance first
         complete_utterance = self.eou_detector.process_chunks(chunks)
         
         if complete_utterance:
+            # If we have a complete utterance, skip interim result
+            # and go straight to final result to avoid duplication
+            pass
+        else:
+            # Only emit interim result if utterance is not complete
+            # This prevents showing final text as interim before finalization
+            if self.on_interim_result:
+                self.on_interim_result(current_text)
+        
+        if complete_utterance:
+            # Prevent duplicate final results for the same utterance
+            if complete_utterance == self.last_finalized_text:
+                # Duplicate detected, skip processing
+                self.logger.debug("Skipping duplicate final utterance: %s", complete_utterance[:50])
+                # Still clear chunks to prevent further issues
+                self.input_handler.clear_chunks()
+                return
+            
+            # Track this finalized text before processing
+            self.last_finalized_text = complete_utterance
+            
             # Emit final result
             if self.on_final_result:
                 self.on_final_result(complete_utterance)

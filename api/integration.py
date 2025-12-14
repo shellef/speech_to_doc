@@ -160,7 +160,9 @@ def run_test_mode_async(config: Optional[Dict[str, Any]] = None):
     driver = WebSocketTestDriver(updater, utterances, logger)
     driver.run()
     
+    logger.info("Test mode thread: Setting is_running=False and exiting...")
     server_state.set_running(False)
+    logger.info("Test mode thread: Exited successfully")
     # Final status update
     schedule_update()
 
@@ -177,8 +179,8 @@ def run_speech_mode_async(config: Optional[Dict[str, Any]] = None):
     finalize_pause_ms = float(config.get("finalize_pause_ms", os.getenv("SPEECH_FINALIZE_PAUSE_MS", "1000"))) if config else float(os.getenv("SPEECH_FINALIZE_PAUSE_MS", "1000"))
     text_source = config.get("input_source", os.getenv("SPEECH_INPUT_SOURCE", "")) if config else os.getenv("SPEECH_INPUT_SOURCE", "")
     
-    if not text_source:
-        text_source = "real-time-transcript.json"  # Default
+    # If no input_source specified, use browser speech recognition (wait for WebSocket chunks)
+    use_browser_speech = not text_source or text_source == "browser"
     
     # Create updater
     client = OpenAI()
@@ -211,14 +213,8 @@ def run_speech_mode_async(config: Optional[Dict[str, Any]] = None):
         logger=logger
     )
     
-    # Create simulator
-    simulator = SimulatedSpeechInputHandler(
-        text_source=text_source,
-        chunk_delay_ms=chunk_delay_ms,
-        finalize_pause_ms=finalize_pause_ms,
-        on_interim_result=on_interim_result,
-        on_final_result=on_final_result,
-    )
+    # Store driver in server state for WebSocket access
+    server_state.set_speech_driver(driver)
     
     # Wrap driver to emit updates after processing
     original_add_chunk = driver.add_chunk
@@ -230,49 +226,82 @@ def run_speech_mode_async(config: Optional[Dict[str, Any]] = None):
     
     driver.add_chunk = wrapped_add_chunk
     
-    # Process chunks
-    if simulator.is_json:
-        last_end_time = None
-        for chunk_data in simulator.json_chunks:
-            if server_state.stop_event.is_set():
-                break
-            
-            start_time = chunk_data.get('start_time')
-            if last_end_time is not None and start_time is not None:
-                delay = start_time - last_end_time
-                if delay > 0:
-                    time.sleep(delay)
-            
-            chunk = {
-                'text': chunk_data['text'],
-                'start_time': start_time,
-                'end_time': chunk_data.get('end_time'),
-                'is_eos': chunk_data.get('is_eos', False),
-                'attaches_to': chunk_data.get('attaches_to'),
-            }
-            driver.add_chunk(chunk)
-            
-            if chunk_data.get('end_time') is not None:
-                last_end_time = chunk_data.get('end_time')
+    # If using browser speech, wait for chunks from WebSocket
+    # Otherwise, use simulator
+    if use_browser_speech:
+        logger.info("Waiting for speech chunks from browser via WebSocket")
+        logger.info(f"  - Initial stop event state: {server_state.stop_event.is_set()}")
+        iteration = 0
+        # Wait until stop event is set (chunks will come via WebSocket)
+        while not server_state.stop_event.is_set():
+            iteration += 1
+            if iteration % 50 == 0:  # Log every 5 seconds (50 * 0.1s)
+                logger.debug(f"  - Still waiting for stop event (iteration {iteration})...")
+            time.sleep(0.1)  # Small sleep to avoid busy waiting
+        
+        logger.info(f"  - Stop event detected! Finalizing driver (iterations: {iteration})...")
+        # Finalize any remaining chunks when stopping
+        if driver:
+            logger.info("  - Calling driver.finalize()...")
+            driver.finalize()
+            logger.info("  - Driver finalized")
+        logger.info("  - Browser speech mode thread exiting")
     else:
-        words = simulator.words
-        for i, word in enumerate(words):
-            if server_state.stop_event.is_set():
-                break
-            
-            if i > 0:
-                time.sleep(simulator.chunk_delay_seconds)
-            
-            is_eos = bool(re.search(r'[.!?]$', word)) if word else False
-            chunk = {
-                'text': word,
-                'is_eos': is_eos,
-                'attaches_to': None,
-            }
-            driver.add_chunk(chunk)
+        # Use simulator for file-based input
+        logger.info(f"Using simulator with input source: {text_source}")
+        simulator = SimulatedSpeechInputHandler(
+            text_source=text_source,
+            chunk_delay_ms=chunk_delay_ms,
+            finalize_pause_ms=finalize_pause_ms,
+            on_interim_result=on_interim_result,
+            on_final_result=on_final_result,
+        )
+        
+        # Process chunks from simulator
+        if simulator.is_json:
+            last_end_time = None
+            for chunk_data in simulator.json_chunks:
+                if server_state.stop_event.is_set():
+                    break
+                
+                start_time = chunk_data.get('start_time')
+                if last_end_time is not None and start_time is not None:
+                    delay = start_time - last_end_time
+                    if delay > 0:
+                        time.sleep(delay)
+                
+                chunk = {
+                    'text': chunk_data['text'],
+                    'start_time': start_time,
+                    'end_time': chunk_data.get('end_time'),
+                    'is_eos': chunk_data.get('is_eos', False),
+                    'attaches_to': chunk_data.get('attaches_to'),
+                }
+                driver.add_chunk(chunk)
+                
+                if chunk_data.get('end_time') is not None:
+                    last_end_time = chunk_data.get('end_time')
+        else:
+            words = simulator.words
+            for i, word in enumerate(words):
+                if server_state.stop_event.is_set():
+                    break
+                
+                if i > 0:
+                    time.sleep(simulator.chunk_delay_seconds)
+                
+                is_eos = bool(re.search(r'[.!?]$', word)) if word else False
+                chunk = {
+                    'text': word,
+                    'is_eos': is_eos,
+                    'attaches_to': None,
+                }
+                driver.add_chunk(chunk)
+        
+        if not server_state.stop_event.is_set():
+            driver.finalize()
     
-    if not server_state.stop_event.is_set():
-        driver.finalize()
-    
+    logger.info("Speech mode thread: Setting is_running=False and exiting...")
     server_state.set_running(False)
+    logger.info("Speech mode thread: Exited successfully")
 

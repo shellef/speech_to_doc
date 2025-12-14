@@ -20,6 +20,7 @@ class ServerState:
     active_connections: List = field(default_factory=list)
     processing_thread: Optional[threading.Thread] = None
     stop_event: threading.Event = field(default_factory=threading.Event)
+    speech_driver: Optional[Any] = None  # Store SpeechDriver instance
     _lock: threading.Lock = field(default_factory=threading.Lock)
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger(__name__))
     
@@ -122,15 +123,36 @@ class ServerState:
                 if ws in self.active_connections:
                     self.active_connections.remove(ws)
     
+    def set_speech_driver(self, driver):
+        """Set the speech driver instance."""
+        with self._lock:
+            self.speech_driver = driver
+    
+    def get_speech_driver(self):
+        """Get the speech driver instance."""
+        with self._lock:
+            return self.speech_driver
+    
     def reset(self):
         """Reset state for new session."""
+        self.logger.info("ServerState.reset() called")
         with self._lock:
-            self.set_running(False)
+            self.logger.info("  - Acquired lock, resetting state...")
+            # Directly set is_running since we already have the lock
+            # (don't call set_running() which would try to acquire the lock again)
+            self.is_running = False
+            self.logger.info("  - Set is_running=False")
             self.stop_event.set()
+            self.logger.info("  - Set stop_event")
             self.transcription = TranscriptionState()
+            self.logger.info("  - Reset transcription")
+            self.speech_driver = None
+            self.logger.info("  - Cleared speech_driver")
             if self.updater:
                 # Keep updater but could reset if needed
                 pass
+            self.logger.info("  - Reset complete, releasing lock")
+        self.logger.info("ServerState.reset() finished")
 
 
 # Global singleton instance

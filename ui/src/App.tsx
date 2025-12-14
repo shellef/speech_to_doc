@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { WebSocketClient } from './websocket';
 import { StatusUpdate, ErrorMessage, Command } from './types';
 import { TranscriptionWindow } from './components/TranscriptionWindow';
 import { UtteranceList } from './components/UtteranceList';
 import { DocumentView } from './components/DocumentView';
+import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<StatusUpdate>({
@@ -18,6 +19,29 @@ const App: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [selectedMode, setSelectedMode] = useState<'test' | 'speech'>('test');
   const wsRef = React.useRef<WebSocketClient | null>(null);
+
+  // Speech recognition callback
+  const handleSpeechChunk = useCallback((chunk: { text: string; is_final: boolean; result_index?: number }) => {
+    if (!wsRef.current || selectedMode !== 'speech' || !status.is_running) return;
+
+    const command: Command = {
+      type: 'speech_chunk',
+      chunk: {
+        text: chunk.text,
+        is_final: chunk.is_final,
+        result_index: chunk.result_index,
+      },
+    };
+
+    wsRef.current.send(command);
+  }, [selectedMode, status.is_running]);
+
+  // Use speech recognition when in speech mode and running
+  const speechEnabled = selectedMode === 'speech' && status.is_running;
+  const { isListening: isSpeechListening, error: speechError, isSupported: isSpeechSupported } = useSpeechRecognition(
+    handleSpeechChunk,
+    speechEnabled
+  );
 
   useEffect(() => {
     const ws = new WebSocketClient();
@@ -102,9 +126,19 @@ const App: React.FC = () => {
               Speech Mode
             </label>
           </div>
+          {selectedMode === 'speech' && !isSpeechSupported && (
+            <span style={{ color: '#f44336', fontSize: '12px' }}>
+              Speech recognition not supported
+            </span>
+          )}
+          {selectedMode === 'speech' && status.is_running && (
+            <span style={{ fontSize: '12px', color: isSpeechListening ? '#4CAF50' : '#999' }}>
+              {isSpeechListening ? '🎤 Listening...' : '⏸️ Paused'}
+            </span>
+          )}
           <button
             onClick={handleStart}
-            disabled={status.is_running || !isConnected}
+            disabled={status.is_running || !isConnected || (selectedMode === 'speech' && !isSpeechSupported)}
             className="btn btn-start"
           >
             Start
@@ -123,9 +157,9 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {error && (
+      {(error || speechError) && (
         <div className="error-banner">
-          Error: {error}
+          Error: {error || speechError}
         </div>
       )}
 

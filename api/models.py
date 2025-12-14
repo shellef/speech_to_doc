@@ -29,9 +29,10 @@ class StatusUpdate(BaseModel):
 
 class Command(BaseModel):
     """Command sent from UI to backend."""
-    type: Literal["start", "stop"]
+    type: Literal["start", "stop", "speech_chunk"]
     mode: Optional[Literal["test", "speech"]] = None
     config: Optional[Dict[str, Any]] = None  # For test utterances, speech config, etc.
+    chunk: Optional[Dict[str, Any]] = None  # For speech chunks from browser
 
 
 class ErrorMessage(BaseModel):

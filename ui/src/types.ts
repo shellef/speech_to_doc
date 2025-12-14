@@ -28,7 +28,7 @@ export interface StatusUpdate {
 }
 
 export interface Command {
-  type: "start" | "stop";
+  type: "start" | "stop" | "speech_chunk";
   mode?: "test" | "speech";
   config?: {
     utterances?: string[] | string;
@@ -37,6 +37,11 @@ export interface Command {
     chunk_delay_ms?: number;
     finalize_pause_ms?: number;
     input_source?: string;
+  };
+  chunk?: {
+    text: string;
+    is_final: boolean;
+    result_index?: number;
   };
 }
 
