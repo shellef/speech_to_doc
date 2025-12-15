@@ -49,7 +49,15 @@ const App: React.FC = () => {
 
     const unsubscribeMessage = ws.onMessage((message) => {
       if (message.type === 'status_update') {
-        setStatus(message);
+        // Ensure transcription object is a new reference to trigger React re-render
+        const statusUpdate = {
+          ...message,
+          transcription: message.transcription ? {
+            interim_text: message.transcription.interim_text || '',
+            finalized_text: message.transcription.finalized_text || ''
+          } : message.transcription
+        };
+        setStatus(statusUpdate);
         setError(null);
       } else if (message.type === 'error') {
         setError((message as ErrorMessage).message);
